@@ -1,11 +1,11 @@
 #include <xc.h>
 
-#define SSPCON1 SSP1CON1
-#define SSPCON2 SSP1CON2
-#define SPPCON2bits SSP1CON2bits
-#define SSPCON3 SSP1CON3
-#define SSPADD SSP1ADD
-#define SSPBUF SSP1BUF
+#define I2C_SSPCON1 SSP1CON1
+#define I2C_SSPCON2 SSP1CON2
+#define I2C_SPPCON2bits SSP1CON2bits
+#define I2C_SSPCON3 SSP1CON3
+#define I2C_SSPADD SSP1ADD
+#define I2C_SSPBUF SSP1BUF
 
 void i2c_init();
 void i2c_wait();
