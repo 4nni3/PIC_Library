@@ -1,5 +1,5 @@
 #ifndef _XTAL_FREQ
-  #define _XTAL_FREQ 32000000
+  #define _XTAL_FREQ 32000000//
 #endif
 
 #define LCD_ADD 0x7c
@@ -12,3 +12,5 @@ void lcd_init();
 void lcd_cmd(char c);
 void lcd_dat(char d);
 void lcd_str(char *str);
+
+void lcd_debug(char *b);

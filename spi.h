@@ -6,6 +6,7 @@
 #define SPI_SSPSTATbits SSP2STATbits
 #define SPI_SSPCON1 SSP2CON1
 #define SPI_SSPADD SSP2ADD
+#define SPI_SSPIE SSP2IE
 
 void spi_init();
 char spi_send(char dt);

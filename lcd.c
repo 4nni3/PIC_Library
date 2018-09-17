@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "lcd.h"
 #include "i2c.h"
 
@@ -36,4 +37,19 @@ void lcd_str(char *str){
     for(char i=0; str[i]!='\0'; i++){
         lcd_dat(str[i]);
     }
+}
+
+char c = 0;
+void lcd_debug(char *b){
+    for(char i=0; b[i]!='\0'; i++){
+        if(c==16) lcd_cmd(LINE2);
+        if(c==32){
+            lcd_cmd(HOME);
+            c=0;
+        }
+        lcd_dat(b[i]);
+        c++;
+    }
+    lcd_dat((char *)'|');
+    c++;
 }
