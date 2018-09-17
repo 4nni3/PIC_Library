@@ -2,39 +2,34 @@
 #include "spi.h"
 
 #include "lcd.h"
-
-#define CMD0 0x40
-#define CMD8 0x48
-#define CMD55 0x77
-#define CMD41 0x69
-#define CMD16 0x50
-#define CMD17 0x51
-#define ACMD41 0x29
-
-#define SDC_CS RA5
-
 void sdc_init(){
+  
+  spi_init();
 
-  sdc_init();
-
-  SDC_CS = HIGH;
+  SDC_CS = 1;
   for(char i=0; i<10; i++) spi_send(0xFF);
-  SDC_CS = LOW;
-  spi_send(0xFF);
-
-  sdc_cmd(CMD0, 0, 0x95);
-
-  if(sdc_cmd(CMD8, 0x1AA, 0x87)!=1){//version1
-    lcd_str("ver1");
-  }else{
-    lcd_str("ver2");
+  
+  //lcd_cmd(CLEAR);
+  
+  if(sdc_cmd(CMD0, 0)!=1){
+    lcd_cmd(LINE2);
+    lcd_str((char *)"CMD0 Error.");
+    return;
   }
+  
+  lcd_cmd(0x80|8);
+  if(sdc_cmd(CMD8, 0x1AA)!=1){//version1
+    lcd_str((char *)"1");
+  }else{
+    lcd_str((char *)"2");
+  }
+  
   spi_send(0xFF);
   spi_send(0xFF);
   spi_send(0xFF);
   if(spi_send(0xFF)!=0xAA){//error
     lcd_cmd(LINE2);
-    lcd_str("CMD8 Error.");
+    lcd_str((char *)"CMD8 Error.");
     return;
   }
 
@@ -47,12 +42,12 @@ void sdc_init(){
 
   if(sdc_cmd(CMD58, 0)){//error
     lcd_cmd(LINE2);
-    lcd_str("CMD58 Error.");
+    lcd_str((char *)"CMD58 Error.");
     return;
   }
   if(spi_send(0xFF)&0b01000000){//sdhc
-    lcd_cmd(0x80|6);
-    lcd_str("sdhc");
+    lcd_cmd(0x80|10);
+    lcd_str((char *)"SDHC");
   }
   spi_send(0xFF);
   spi_send(0xFF);
@@ -60,25 +55,37 @@ void sdc_init(){
   
   if(sdc_cmd(CMD16, 512)){//error
     lcd_cmd(LINE2);
-    lcd_str("CMD16 Error.");
+    lcd_str((char *)"CMD16 Error.");
     return;
   }
-
-  SDC_CS = HIGH;
-
+  
+  SDC_CS = 1;
+  
   lcd_cmd(LINE2);
-  lcd_str("Success!");
+  lcd_str((char *)"Success!");
 }
 
-char sdc_cmd(char cmd, unsigned long arg, char crc=0xFF){
-  while(spi_send(0xFF)!=0);
-
-  spi_send(cmd);
+char sdc_cmd(unsigned char cmd, unsigned long arg){
+  SDC_CS = 0;
+  spi_send(0xFF);
+  
+  short time=0;
+  while(spi_send(0xFF)!=0xFF&&time<500){
+      time++;
+      __delay_ms(1);
+  }
+  if(500==time){
+      lcd_cmd(CLEAR);
+      lcd_str("TIME OUT");
+      return 0;
+  }
+  
+  spi_send(cmd|0x40);
   spi_send(arg>>24);
   spi_send(arg>>16);
   spi_send(arg>>8);
   spi_send(arg);
-  spi_send(crc);
+  spi_send( (cmd==CMD0)?0x95:(cmd==CMD8)?0x87:0xFF );
 
   char r;
   do{
