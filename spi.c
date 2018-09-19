@@ -4,22 +4,15 @@
 
 void spi_init(){
   SPI_SSPSTAT = 0b00000000;//middle, idle 
-  SPI_SSPCON1 = 0b00111010;//clock high, SPI Master, clk = fosc/(4*add+1)
-  SPI_SSPADD = 29;//300kHz
-  
-  SPI_SSPIF = 0;
-  SPI_SSPIE = 1;
-  PEIE = 1;
-  GIE = 1;
+  SPI_SSPCON1 = 0b00110010;//clock high, SPI Master, clk = fosc/64
+  SPI_CS = 1;
 }
 
-char spi_send(char dt){
+char spi_transfer(char dt){
+  SPI_CS = 0;
   SPI_SSPBUF = dt;
-  while(SPI_SSPIF == 0);
-  SPI_SSPIF = 0;
+  while(SPI_SSPSTATbits.BF == 0);
   char r = SPI_SSPBUF;
-  char b[4];
-  sprintf(b, "S%02X", r);
-  lcd_debug(b);
+  SPI_CS = 1;
   return r;
 }

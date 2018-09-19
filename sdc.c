@@ -10,7 +10,7 @@ void sdc_init(){
   
   spi_init();
 
-  SDC_CS = 1;
+  SPI_CS = 1;
   for(char i=0; i<10; i++) spi_send(0xFF);
   
   r = sdc_cmd(CMD0, 0);
@@ -27,10 +27,10 @@ void sdc_init(){
   }else{
     lcd_debug((char *)"2");
   }
-  spi_send(0xFF);
-  spi_send(0xFF);
-  spi_send(0xFF);
-  spi_send(0xFF);
+  spi_transfer(0xFF);
+  spi_transfer(0xFF);
+  spi_transfer(0xFF);
+  spi_transfer(0xFF);
 
   
   do{
@@ -44,39 +44,34 @@ void sdc_init(){
     return;
   }
   lcd_cmd(0x80|4);
-  if(spi_send(0xFF)&0b01000000){//sdhc
+  if(spi_transfer(0xFF)&0b01000000){//sdhc
     lcd_debug((char *)"SDHC");
   }else{
     lcd_debug((char *)"SD");
   }
-  spi_send(0xFF);
-  spi_send(0xFF);
-  spi_send(0xFF);
+  spi_transfer(0xFF);
+  spi_transfer(0xFF);
+  spi_transfer(0xFF);
   
   if(sdc_cmd(CMD16, 512)){//error
     lcd_debug((char *)"CMD16 Error.");
     return;
   }
   
-  SDC_CS = 1;
-  
   lcd_debug((char *)"Success!");
 }
 
 char sdc_cmd(unsigned char cmd, unsigned long arg){
-  SDC_CS = 0;
-  spi_send(0xFF);
-  
-  spi_send(cmd|0x40);
-  spi_send(arg>>24);
-  spi_send(arg>>16);
-  spi_send(arg>>8);
-  spi_send(arg);
-  spi_send( ((cmd==CMD0)||(cmd==CMD8))?0x95:0xFF );
+  spi_transfer(cmd|0x40);
+  spi_transfer(arg>>24);
+  spi_transfer(arg>>16);
+  spi_transfer(arg>>8);
+  spi_transfer(arg);
+  spi_transfer( ((cmd==CMD0)||(cmd==CMD8))?0x95:0xFF );
 
   char r;
   do{
-  	r = spi_send(0xFF);
+  	r = spi_transfer(0xFF);
   }while(r==0xFF);
 
   return r;

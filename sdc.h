@@ -4,8 +4,6 @@
   #define _XTAL_FREQ 32000000//
 #endif
 
-#define SDC_CS LATCbits.LATC2//
-
 #define CMD0   0x00
 #define CMD1   0x01
 #define CMD8   0x08
