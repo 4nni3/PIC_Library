@@ -227,72 +227,62 @@ char sdc_init(){
     
     return OK;
 }
-char search_file(char name[11]){
+char search_file(char *name){
     short c=-1;
-    char ans=ERROR;
     DirEntryIndex = 0;
     for(short i=0; i<DirEntrySector_SU; i++){
         read(DirEntry_P+i);
 
-        for(char j=0; j<16; j++){
+        for(char j=0; j<16; j++){//j個目のエントリ
             c++;
 
             struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[32*j];
             
             if(inf->FileName[0]==0xE5){
-                if(DirEntryIndex == 0) DirEntryIndex = c;
+                if(DirEntryIndex ==0) DirEntryIndex = c;
                 continue;
             }
             if(inf->FileName[0]==0x00){
-                if(DirEntryIndex == 0) DirEntryIndex = c;
+                if(DirEntryIndex ==0) DirEntryIndex = c;
 
-                i = DirEntrySector_SU;
-                ans = ERROR;
-                break;
+                return ERROR;
             }
             if(memcmp(inf->FileName, name, 11)==0){
                 DirEntryIndex = c;
                 FirstFatno = inf->FirstCluster;
                 FileSeekP = inf->FileSize;
 
-                i = DirEntrySector_SU;
-                ans = OK;
-                break;
+                return OK;
             }
         }
     }
-    return ans;
+    return ERROR;
 }
 
 
 //クラスタ番号を返す
 unsigned short search_fat(){
-    unsigned short ans=0;
     for(short i=0; i<Fat1Sector_SU; i++){//1個のFAT中のi個目のセクタ
         read(Fat_P +i);
 
         for(short j=0; j<512; j+=2){//セクタ中のj番地
-            if( (buff[j]|buff[j+1]) ==0 ){
-                buff[j]=0xFF;
+            if( (buff[j]|buff[j+1]) ==0 ){//空を発見
+                buff[j]=0xFF;//最後って表す
                 buff[j+1]=0xFF;
 
                 write(Fat_P +i);
                 write(Fat_P +i +Fat1Sector_SU);
 
-                ans = (i*512+j)/2;
-                
-                i = Fat1Sector_SU;
-                break;
+                return (i *512 +j) /2;
             }
         }
     }
-    char c[6];
-    sprintf(c, "X%04X\0", ans);
-    lcd_debug(c);
-    return ans;
+    return OK;
 }
+
+//no: 最初のクラスタの位置
 void entry_make(unsigned short no, char *name){
-    unsigned long p = DirEntry_P + DirEntryIndex*32/512;
+    unsigned long p = DirEntry_P + DirEntryIndex *32 /512;
 
     read(p);
     
@@ -313,19 +303,15 @@ void entry_make(unsigned short no, char *name){
     write(p);
 
 }
-void sdc_open(char name[11]){
-    if(search_file(name)){//ERROR
-        entry_make(search_fat(), name);
+void sdc_open(char *filename){
+    if(search_file(filename)){
+        entry_make(search_fat(), filename);
     }
-    __delay_ms(100);
 }
 void sdc_close(){
     entry_make(0, 0);
-    
     SDC_CS = 1;
 }
-
-//クラスタ番号を返す
 unsigned short ClusterN;
 void next_fat_read(){
     union {
@@ -341,53 +327,56 @@ void next_fat_read(){
     no.c[1] = buff[x_inSecter+1];
     ClusterN = no.l;
     
-    if(ClusterN>=0xFFF7){
-        no.l = search_fat();
-        ClusterN = no.l;
+    if(ClusterN>=0xFFF7){//次がない場合
+        ClusterN = search_fat();//新しいの見つける
+
+        //記録する
+        no.l = ClusterN;
         buff[x_inSecter] = no.c[0];
         buff[x_inSecter+1] = no.c[1];
         write(secter_p);
         write(secter_p +Fat1Sector_SU);
     }
-}
 
-void fatno_seek_conv(){
-    ClusterN = FirstFatno;
-    unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
-    
-    for(unsigned short i=0; i<p; i++) next_fat_read();
-    
     char c[6];
-    sprintf(c, "T%04X\0", ClusterN);
+    sprintf(c, "N%04X\0", ClusterN);
     lcd_debug(c);
 }
-unsigned long dtCluster_SP;
+
 void sdc_write(char *str, char b){
     
-    fatno_seek_conv();
+    ClusterN = FirstFatno;
+    unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
+    //データの最後はp個目のクラスタ
+    
+    for(unsigned short i=0; i<p; i++) next_fat_read();
 
-    /*unsigned long */dtCluster_SP = Data_P + (ClusterN -2) *Cluster1Sector_SU;
-    unsigned short p = (FileSeekP /512) %Cluster1Sector_SU;
+    //クラスタの最初のセクタの位置
+    unsigned long dtCluster_P = Data_P + (ClusterN -2) *Cluster1Sector_SU;
 
-    read(dtCluster_SP +p);
+    //シーク位置はクラスタ中p個目のセクタ
+    unsigned short p_in = (FileSeekP /512) %Cluster1Sector_SU;
+
+    //シーク位置はセクタ中x個目
     unsigned short x = FileSeekP %512;
+
+    read(dtCluster_P +p);
     
     for(char i=0; i<b; i++){
         buff[x] = str[i];
         x++;
         FileSeekP++;
-        if (x>=512){
-            write(dtCluster_SP +p);
-            p++;
-            if(p>=Cluster1Sector_SU){
-                fatno_seek_conv();
-                dtCluster_SP = Data_P +(ClusterN -2) *Cluster1Sector_SU;
+        if(x>=512){//次のセクタに入った
+            write(dtCluster_P +p);
+            p++;//次のセクタ
+            if(p>=Cluster1Sector_SU){//次のクラスタに入った
+                next_fat_read();
+                dtCluster_P = Data_P +(ClusterN -2) *Cluster1Sector_SU;
                 p = (FileSeekP /512) %Cluster1Sector_SU;
             }
-            read(dtCluster_SP +p);
+            read(dtCluster_P +p);
             x = 0;
         }
     }
-    write(dtCluster_SP +p);
-
+    write(dtCluster_P +p);
 }
