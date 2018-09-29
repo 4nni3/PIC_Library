@@ -5,7 +5,8 @@
 
 #include "lcd.h"
 
-#define SECTER 512
+#define ERROR -1
+#define OK 0
 
 #define CMD0   0
 #define CMD1   1
@@ -47,29 +48,31 @@ struct FAT_PARA{
 
 
 struct DIR_ENTRY{
-    unsigned char  FileName[11];
-    unsigned char  Attributes;
+    unsigned char  FileName[11];//0-10
+    unsigned char  Attributes;//11
     unsigned char  Reserved;
     unsigned char  CreationTimeTenths;
-    unsigned short CreationTime;
+    unsigned short CreationTime;//14-15
     unsigned short CreationDate;
     unsigned short LastAccessDate;
-    unsigned short FirstCluster;
-    unsigned short LastWriteTime;
+    unsigned short Reserved2;//20-21
+    unsigned short LastWriteTime;//22-23
     unsigned short LastWriteDate;
-    unsigned short Reserved2;
-    unsigned long  FileSize;
+    unsigned short FirstCluster;//26-27
+    unsigned long  FileSize;//28-31
 };
 
 bit notSDHC;
 
-char buff[SECTER];
+char buff[512];
 
 char cmd(unsigned char cmd, unsigned long arg){
 
     char crc = 0xFF;
     if(cmd==CMD0) crc = 0x95;
     if(cmd==CMD8) crc = 0x87;
+    
+    while(spi_transfer(0xFF)!=0xFF);
 
     spi_transfer(cmd|0x40);
     spi_transfer(arg>>24);
@@ -83,7 +86,7 @@ char cmd(unsigned char cmd, unsigned long arg){
     do{
     	r = spi_transfer(0xFF);
         //x++;
-    }while(r==0xFF /*&& x<30000*/);
+    }while(r&0b10000000 /*&& x<30000*/);
 
     return r;
 }
@@ -97,51 +100,50 @@ void read(unsigned long sector){
         lcd_debug(c);
         return;
     }
-    while(spi_transfer(0xFF)!=0xFE);
-    for(short i=0; i<SECTER; i++){
+    while(spi_transfer(0xFF)!=0xFE) __delay_us(100);
+    for(short i=0; i<512; i++){
         buff[i] = spi_transfer(0xFF);
     }
-    spi_transfer(0x01);//CRC
-    spi_transfer(0x01);//CRC
+    spi_transfer(0xFF); //CRC
+    spi_transfer(0xFF); //CRC
 }
 void write(unsigned long sector){
     if(notSDHC) sector<<=9;
 
     cmd(CMD24, sector);
     spi_transfer(0xFE);
-    for(short i=0; i<SECTER; i++){
+    for(short i=0; i<512; i++){
         spi_transfer(buff[i]);
     }
-    spi_transfer(0x01);//CRC
-    spi_transfer(0x01);//CRC
+    spi_transfer(0xFF);//CRC
+    spi_transfer(0xFF);//CRC
+    
+    while(spi_transfer(0xFF)!=0xFF);
 }
 unsigned long  DirEntry_P;
 unsigned long  Data_P;
 unsigned long  Fat_P;
 
-unsigned short DirEntrySecter_SU;
+unsigned short DirEntrySector_SU;
 unsigned short Cluster1Sector_SU;
 unsigned long  Fat1Sector_SU;
 
 unsigned short DirEntryIndex;
-unsigned long FileSize;
-unsigned long FileSeekP;
-unsigned long AppendSize;
+unsigned long  FileSeekP;
 unsigned short FirstFatno;
 void fat_para_read(){
     union {
         unsigned char c[4];
         unsigned long l;
     } dt ;
-
+    
     read(0);
-
-    for(char i=0 ; i<4 ; i++){
+    
+    for(char i=0; i<4; i++){
         dt.c[i] = buff[454+i];
     }
-
     read(dt.l);
-
+    
     struct FAT_PARA *fat = (struct FAT_PARA *)buff;
 
     Cluster1Sector_SU = fat->SectorsPerCluster;
@@ -152,14 +154,10 @@ void fat_para_read(){
 
     DirEntry_P = Fat_P +Fat1Sector_SU *fat->FatCount;
 
-    DirEntrySecter_SU = fat->RootDirEntryCount *32 /512;
-    Data_P = DirEntry_P +DirEntrySecter_SU;
-    
-    lcd_debug((char *)"PARA OK");
-
+    DirEntrySector_SU = fat->RootDirEntryCount *32 /512;
+    Data_P = DirEntry_P +DirEntrySector_SU;
 }
-void sdc_init(){
-
+char sdc_init(){
     char r;
 
     spi_init();
@@ -174,10 +172,9 @@ void sdc_init(){
         char b[6];
         sprintf(b, "Er%02X\0", r);
         lcd_debug(b);
-        return;
+        return ERROR;
     }
     lcd_debug((char *)"OK");
-
 
     lcd_debug((char *)"CMD8");
     if(cmd(CMD8, 0x1AA)==0x01){//version1
@@ -200,51 +197,48 @@ void sdc_init(){
         char c[6];
         sprintf(c, "Er%02X\0", r);
         lcd_debug(c);
-        return;
+        return ERROR;
     }
     lcd_debug((char *)"OK");
 
     lcd_debug((char *)"CMD58");
     if(cmd(CMD58, 0)!=0x00){//error
         lcd_debug((char *)"Er");
-        return;
+        return ERROR;
     }
     if(spi_transfer(0xFF)&0b01000000){//SDHC
         notSDHC = 0;
-        lcd_debug((char *)"SDHC");
     }else{
         notSDHC = 1;
-        lcd_debug((char *)"SD");
     }
     spi_transfer(0xFF);
     spi_transfer(0xFF);
     spi_transfer(0xFF);
 
     lcd_debug((char *)"CMD16");
-    if(cmd(CMD16, SECTER)!=0x00){//error
+    if(cmd(CMD16, 512)!=0x00){//error
         char d[6];
         sprintf(d, "Er%02X\0", r);
         lcd_debug(d);
-        return;
+        return ERROR;
     }
     lcd_debug("OK");
-
-    lcd_debug((char *)"Success!");
-
     fat_para_read();
+    
+    return OK;
 }
 char search_file(char name[11]){
-    short c=0;
-    char ans=0;
+    short c=-1;
+    char ans=ERROR;
     DirEntryIndex = 0;
-    for(short i=0; i<DirEntrySecter_SU; i++){
+    for(short i=0; i<DirEntrySector_SU; i++){
         read(DirEntry_P+i);
 
         for(char j=0; j<16; j++){
             c++;
 
             struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[32*j];
-
+            
             if(inf->FileName[0]==0xE5){
                 if(DirEntryIndex == 0) DirEntryIndex = c;
                 continue;
@@ -253,35 +247,32 @@ char search_file(char name[11]){
                 if(DirEntryIndex == 0) DirEntryIndex = c;
 
                 i = DirEntrySector_SU;
-                ans = 1;
+                ans = ERROR;
                 break;
             }
             if(memcmp(inf->FileName, name, 11)==0){
                 DirEntryIndex = c;
-                FileSeekP = 0;
-                FileSize = inf->FileSize;
-
                 FirstFatno = inf->FirstCluster;
+                FileSeekP = inf->FileSize;
 
                 i = DirEntrySector_SU;
-                ans = 0;
+                ans = OK;
                 break;
             }
         }
     }
     return ans;
 }
-unsigned long search_fat(){
-    unsigned long ans;
-    char x;
-    for(short i=0; i<Fat1Sector_SU; i++){
-        read(Fat_P+i);
 
-        for(short j=0; j<512; j+=2){
-            x  = buff[j];
-            x |= buff[j+1];
 
-            if(x==0){
+//クラスタ番号を返す
+unsigned short search_fat(){
+    unsigned short ans=0;
+    for(short i=0; i<Fat1Sector_SU; i++){//1個のFAT中のi個目のセクタ
+        read(Fat_P +i);
+
+        for(short j=0; j<512; j+=2){//セクタ中のj番地
+            if( (buff[j]|buff[j+1]) ==0 ){
                 buff[j]=0xFF;
                 buff[j+1]=0xFF;
 
@@ -289,149 +280,114 @@ unsigned long search_fat(){
                 write(Fat_P +i +Fat1Sector_SU);
 
                 ans = (i*512+j)/2;
-
+                
                 i = Fat1Sector_SU;
                 break;
             }
         }
     }
+    char c[6];
+    sprintf(c, "X%04X\0", ans);
+    lcd_debug(c);
     return ans;
 }
-void entry_make(unsigned long no, char *name){
-    unsigned long p = DirEntry_P + (DirEntryIndex-1)*32/512;
+void entry_make(unsigned short no, char *name){
+    unsigned long p = DirEntry_P + DirEntryIndex*32/512;
 
     read(p);
     
-    struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[((DirEntryIndex-1)%16)*32];
+    struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[(DirEntryIndex%16) *32];
 
     if(no!=0){
         memset(inf, 0x00, 32);
         memcpy(inf->FileName, name, 11);
         inf->Attributes = 0x20;
-        inf->FirstCluster = (unsigned short)no;
+        inf->FirstCluster = no;
+        
         FileSeekP = 0;
-        FileSize  = 0;
-        FirstFatno = inf->FirstCluster;
+        FirstFatno = no;
     }else{
-        inf->FileSize += AppendSize;
+        inf->FileSize == FileSeekP;
     }
 
     write(p);
-    lcd_debug((char *)"M2");
 
 }
 void sdc_open(char name[11]){
-    SDC_CS = 0;
-    spi_transfer(0xFF);
-    
-    if(search_file(name)){
-        unsigned long no = search_fat();
-        entry_make(no, name);
+    if(search_file(name)){//ERROR
+        entry_make(search_fat(), name);
     }
-    FileSeekP = FileSize;
-    
-    SDC_CS = 1;
-    
+    __delay_ms(100);
 }
 void sdc_close(){
-    SDC_CS = 0;
-    spi_transfer(0xFF);
-    
-    if(AppendSize!=0) entry_make(0, 0);
-
-    DirEntrySecter_SU;
-    Cluster1Sector_SU;
-    Fat1Sector_SU;
-
-    DirEntryIndex;
-    FileSize;
-    FileSeekP;
-    AppendSize;
-    FirstFatno;
+    entry_make(0, 0);
     
     SDC_CS = 1;
 }
 
-unsigned short next_fat_read(unsigned long fatno) {
-
+//クラスタ番号を返す
+unsigned short ClusterN;
+void next_fat_read(){
     union {
         unsigned char c[2];
         unsigned short l;
     } no;
-    unsigned short ans;
-
-    unsigned long p = Fat_P + fatno *2 /512;
-    read(p);
-
-    unsigned long x = (fatno %256) *2;
-    no.l = 0;
     
-    no.c[0] = buff[x];
-    no.c[1] = buff[x+1];
+    unsigned long secter_p = Fat_P + (ClusterN *2 /512);
+    short x_inSecter = (ClusterN %256) *2;
+    read(secter_p);
     
-    ans = no.l;
+    no.c[0] = buff[x_inSecter];
+    no.c[1] = buff[x_inSecter+1];
+    ClusterN = no.l;
     
-    if(ans==0xFFFF){//already yoyaku
-        ans = search_fat();
-        if(ans != 0){
-            read(p);
-            no.l = ans;
-            buff[x] = no.c[0];
-            buff[x+1] = no.c[1];
-            write(p);
-            write(p + Fat1Sector_SU);
-        }
+    if(ClusterN>=0xFFF7){
+        no.l = search_fat();
+        ClusterN = no.l;
+        buff[x_inSecter] = no.c[0];
+        buff[x_inSecter+1] = no.c[1];
+        write(secter_p);
+        write(secter_p +Fat1Sector_SU);
     }
-    return ans;
-}
-void fatno_seek_conv(unsigned long *fatno){
-     unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
-
-     *fatno = FirstFatno;
-     for(unsigned short i=0 ; i<p; i++){
-         *fatno = next_fat_read(*fatno);
-     }
 }
 
-void sdc_write(char *str){
+void fatno_seek_conv(){
+    ClusterN = FirstFatno;
+    unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
     
-    SDC_CS = 0;
-    spi_transfer(0xFF);
+    for(unsigned short i=0; i<p; i++) next_fat_read();
     
-    lcd_debug((char *)"WriteSS");
+    char c[6];
+    sprintf(c, "T%04X\0", ClusterN);
+    lcd_debug(c);
+}
+unsigned long dtCluster_SP;
+void sdc_write(char *str, char b){
     
-    unsigned long dtSP;
-    unsigned long fatno;
+    fatno_seek_conv();
 
-    fatno_seek_conv(&fatno);
-
-    dtSP = Data_P + (fatno -2) *Cluster1Sector_SU;
+    /*unsigned long */dtCluster_SP = Data_P + (ClusterN -2) *Cluster1Sector_SU;
     unsigned short p = (FileSeekP /512) %Cluster1Sector_SU;
 
-    read(dtSP +p);
-    lcd_debug((char *)"W1");
+    read(dtCluster_SP +p);
     unsigned short x = FileSeekP %512;
-
-    for(char i=0; str[i]!='\0'; i++) {
+    
+    for(char i=0; i<b; i++){
         buff[x] = str[i];
         x++;
         FileSeekP++;
-        AppendSize++;
         if (x>=512){
-            write(dtSP +p);
+            write(dtCluster_SP +p);
             p++;
-            if(p>=Cluster1Sector_SU) {
-                fatno_seek_conv(&fatno);
-                dtSP = Data_P +(fatno -2) *Cluster1Sector_SU;
+            if(p>=Cluster1Sector_SU){
+                fatno_seek_conv();
+                dtCluster_SP = Data_P +(ClusterN -2) *Cluster1Sector_SU;
                 p = (FileSeekP /512) %Cluster1Sector_SU;
             }
-            read(dtSP + p);
+            read(dtCluster_SP +p);
             x = 0;
         }
     }
-    write(dtSP +p);
-    
-    lcd_debug((char *)"WriteOK");
-    
-    SDC_CS = 1;
+    write(dtCluster_SP +p);
+
 }

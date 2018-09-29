@@ -2,5 +2,7 @@
 
 #define SDC_CS LATAbits.LATA2
 
-void sdc_init();
-void sdc_put(char filename[11], char *str);
+char sdc_init();
+void sdc_open(char filename[11]);
+void sdc_write(char *str, char b);
+void sdc_close();
