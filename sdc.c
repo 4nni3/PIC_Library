@@ -95,14 +95,14 @@ void read(unsigned long sector){
         char c[10];
         sprintf(c, "C17Er%02X\0", r);
         lcd_debug(c);
-        //return;
+        return;
     }
     while(spi_transfer(0xFF)!=0xFE);
     for(short i=0; i<SECTER; i++){
         buff[i] = spi_transfer(0xFF);
     }
-    spi_transfer(0xFF);//CRC
-    spi_transfer(0xFF);//CRC
+    spi_transfer(0x01);//CRC
+    spi_transfer(0x01);//CRC
 }
 void write(unsigned long sector){
     if(notSDHC) sector<<=9;
@@ -112,16 +112,16 @@ void write(unsigned long sector){
     for(short i=0; i<SECTER; i++){
         spi_transfer(buff[i]);
     }
-    spi_transfer(0xFF);//CRC
-    spi_transfer(0xFF);//CRC
+    spi_transfer(0x01);//CRC
+    spi_transfer(0x01);//CRC
 }
+unsigned long  DirEntry_P;
+unsigned long  Data_P;
+unsigned long  Fat_P;
 
-unsigned long  Dir_Entry_StartP;//479
-unsigned short DirEntry_SectorSU;
-unsigned long  Data_Area_StartP;
-unsigned long  Fat_Area_StartP;
-unsigned short Cluster1_SectorSU;
-unsigned long  SectorsPerFatSU;
+unsigned short DirEntrySecter_SU;
+unsigned short Cluster1Sector_SU;
+unsigned long  Fat1Sector_SU;
 
 unsigned short DirEntryIndex;
 unsigned long FileSize;
@@ -144,17 +144,16 @@ void fat_para_read(){
 
     struct FAT_PARA *fat = (struct FAT_PARA *)buff;
 
-    Cluster1_SectorSU = fat->SectorsPerCluster;
+    Cluster1Sector_SU = fat->SectorsPerCluster;
 
-    SectorsPerFatSU = fat->SectorsPerFat;
+    Fat1Sector_SU = fat->SectorsPerFat;
 
-    Fat_Area_StartP = dt.l + fat->SecterPerBPB;
+    Fat_P = fat->SecterPerBPB +dt.l;
 
-    Dir_Entry_StartP = Fat_Area_StartP + SectorsPerFatSU * fat->FatCount;
+    DirEntry_P = Fat_P +Fat1Sector_SU *fat->FatCount;
 
-    DirEntry_SectorSU = fat->RootDirEntryCount * 32 / SECTER;
-    Data_Area_StartP = Dir_Entry_StartP + DirEntry_SectorSU;
-    
+    DirEntrySecter_SU = fat->RootDirEntryCount *32 /512;
+    Data_P = DirEntry_P +DirEntrySecter_SU;
     
     lcd_debug((char *)"PARA OK");
 
@@ -168,8 +167,6 @@ void sdc_init(){
     SDC_CS = 1;
     for(char i=0; i<10; i++) spi_transfer(0xFF);
     SDC_CS = 0;
-
-    __delay_ms(1000);
 
     lcd_debug((char *)"CMD0");
     r = cmd(CMD0, 0);
@@ -234,25 +231,19 @@ void sdc_init(){
 
     lcd_debug((char *)"Success!");
 
-    __delay_ms(1000);
-
     fat_para_read();
-    __delay_ms(100);
-    
-    SDC_CS = 1;
-
 }
 char search_file(char name[11]){
     short c=0;
     char ans=0;
     DirEntryIndex = 0;
-    for(short i=0; i<DirEntry_SectorSU; i++){
-        read(Dir_Entry_StartP+i);
+    for(short i=0; i<DirEntrySecter_SU; i++){
+        read(DirEntry_P+i);
 
-        for (char j=0; j<16; j++){
+        for(char j=0; j<16; j++){
             c++;
 
-            struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[j*32];
+            struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[32*j];
 
             if(inf->FileName[0]==0xE5){
                 if(DirEntryIndex == 0) DirEntryIndex = c;
@@ -261,7 +252,7 @@ char search_file(char name[11]){
             if(inf->FileName[0]==0x00){
                 if(DirEntryIndex == 0) DirEntryIndex = c;
 
-                i = DirEntry_SectorSU;
+                i = DirEntrySector_SU;
                 ans = 1;
                 break;
             }
@@ -272,7 +263,7 @@ char search_file(char name[11]){
 
                 FirstFatno = inf->FirstCluster;
 
-                i = DirEntry_SectorSU;
+                i = DirEntrySector_SU;
                 ans = 0;
                 break;
             }
@@ -282,51 +273,47 @@ char search_file(char name[11]){
 }
 unsigned long search_fat(){
     unsigned long ans;
+    char x;
+    for(short i=0; i<Fat1Sector_SU; i++){
+        read(Fat_P+i);
 
-    for(short i=0; i<SectorsPerFatSU; i++){
-        read(Fat_Area_StartP+i);
+        for(short j=0; j<512; j+=2){
+            x  = buff[j];
+            x |= buff[j+1];
 
-        for(short j=0; j<SECTER; j+=2){
-            short x;
-            for(char k=0; k<2; k++) x |= buff[j+k];
             if(x==0){
                 buff[j]=0xFF;
                 buff[j+1]=0xFF;
 
-                write(Fat_Area_StartP+i);
-                write(Fat_Area_StartP+i +SectorsPerFatSU);
+                write(Fat_P +i);
+                write(Fat_P +i +Fat1Sector_SU);
 
-                ans = (i*SECTER +j)/2;
+                ans = (i*512+j)/2;
+
+                i = Fat1Sector_SU;
+                break;
             }
-            i = SectorsPerFatSU;
-            break;
         }
     }
     return ans;
 }
-unsigned long hhh;
 void entry_make(unsigned long no, char *name){
-    unsigned short x = DirEntryIndex-1;//9
-    unsigned short y = SECTER/32;//16
-    unsigned long p = Dir_Entry_StartP+(x/y);
-    
-    lcd_debug((char *)"MMM");
-    hhh=p;
+    unsigned long p = DirEntry_P + (DirEntryIndex-1)*32/512;
+
     read(p);
-    lcd_debug((char *)"M1");
     
-    struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[(x%y)*32];
+    struct DIR_ENTRY *inf = (struct DIR_ENTRY *)&buff[((DirEntryIndex-1)%16)*32];
 
     if(no!=0){
         memset(inf, 0x00, 32);
-        memcpy(inf->FileName,name,11);
+        memcpy(inf->FileName, name, 11);
         inf->Attributes = 0x20;
         inf->FirstCluster = (unsigned short)no;
         FileSeekP = 0;
         FileSize  = 0;
         FirstFatno = inf->FirstCluster;
     }else{
-        inf->FileSize = inf->FileSize + AppendSize;
+        inf->FileSize += AppendSize;
     }
 
     write(p);
@@ -339,7 +326,7 @@ void sdc_open(char name[11]){
     
     if(search_file(name)){
         unsigned long no = search_fat();
-        entry_make(no,name);
+        entry_make(no, name);
     }
     FileSeekP = FileSize;
     
@@ -347,29 +334,36 @@ void sdc_open(char name[11]){
     
 }
 void sdc_close(){
-    
     SDC_CS = 0;
     spi_transfer(0xFF);
     
-    if(AppendSize==0) return;
-    entry_make(0, 0);
+    if(AppendSize!=0) entry_make(0, 0);
+
+    DirEntrySecter_SU;
+    Cluster1Sector_SU;
+    Fat1Sector_SU;
+
+    DirEntryIndex;
+    FileSize;
+    FileSeekP;
+    AppendSize;
+    FirstFatno;
     
     SDC_CS = 1;
 }
 
-unsigned long next_fat_read(unsigned long fatno) {
+unsigned short next_fat_read(unsigned long fatno) {
 
     union {
-        unsigned char c[4];
-        unsigned long l;
+        unsigned char c[2];
+        unsigned short l;
     } no;
+    unsigned short ans;
 
-    unsigned long ans;
-
-    // ＦＡＴ領域のデータを読込む
-    unsigned long p = Fat_Area_StartP + fatno / (SECTER / 2);
+    unsigned long p = Fat_P + fatno *2 /512;
     read(p);
-    unsigned long x = (fatno % (SECTER / 2)) * 2;
+
+    unsigned long x = (fatno %256) *2;
     no.l = 0;
     
     no.c[0] = buff[x];
@@ -377,7 +371,7 @@ unsigned long next_fat_read(unsigned long fatno) {
     
     ans = no.l;
     
-    if(ans==0xFFFF){
+    if(ans==0xFFFF){//already yoyaku
         ans = search_fat();
         if(ans != 0){
             read(p);
@@ -385,16 +379,16 @@ unsigned long next_fat_read(unsigned long fatno) {
             buff[x] = no.c[0];
             buff[x+1] = no.c[1];
             write(p);
-            write(p + SectorsPerFatSU);
+            write(p + Fat1Sector_SU);
         }
     }
     return ans;
 }
 void fatno_seek_conv(unsigned long *fatno){
-     unsigned short p = FileSeekP / SECTER / Cluster1_SectorSU;
+     unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
 
      *fatno = FirstFatno;
-     for(short i=0 ; i<p ; i++){
+     for(unsigned short i=0 ; i<p; i++){
          *fatno = next_fat_read(*fatno);
      }
 }
@@ -411,38 +405,33 @@ void sdc_write(char *str){
 
     fatno_seek_conv(&fatno);
 
-    dtSP = Data_Area_StartP + (fatno - 2) * Cluster1_SectorSU;
-    unsigned short p = (FileSeekP / SECTER) % Cluster1_SectorSU;
+    dtSP = Data_P + (fatno -2) *Cluster1Sector_SU;
+    unsigned short p = (FileSeekP /512) %Cluster1Sector_SU;
 
-    read(dtSP + p);
+    read(dtSP +p);
     lcd_debug((char *)"W1");
-    unsigned short x = FileSeekP % SECTER;
+    unsigned short x = FileSeekP %512;
 
     for(char i=0; str[i]!='\0'; i++) {
         buff[x] = str[i];
         x++;
         FileSeekP++;
         AppendSize++;
-        if (x >= SECTER){
-            write(dtSP + p);
-            lcd_debug((char *)"W2");
+        if (x>=512){
+            write(dtSP +p);
             p++;
-            if(p >= Cluster1_SectorSU) {
+            if(p>=Cluster1Sector_SU) {
                 fatno_seek_conv(&fatno);
-
-                dtSP = Data_Area_StartP + (fatno - 2) * Cluster1_SectorSU;
-                p = (FileSeekP / SECTER) % Cluster1_SectorSU;
+                dtSP = Data_P +(fatno -2) *Cluster1Sector_SU;
+                p = (FileSeekP /512) %Cluster1Sector_SU;
             }
-
             read(dtSP + p);
-            lcd_debug((char *)"W3");
             x = 0;
         }
     }
-    write(dtSP + p);
+    write(dtSP +p);
     
     lcd_debug((char *)"WriteOK");
     
     SDC_CS = 1;
-    
 }
