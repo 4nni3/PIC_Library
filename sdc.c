@@ -305,7 +305,7 @@ void next_fat_read(){
         write(secter_p +Fat1Sector_SU);
     }
 }
-unsigned long dtCluster_P;
+
 void sdc_write(char *str, char b){
     
     ClusterN = FirstFatno;
@@ -314,7 +314,7 @@ void sdc_write(char *str, char b){
     for(unsigned short i=0; i<q; i++) next_fat_read();
 
     //クラスタの最初のセクタの位置
-    dtCluster_P = Data_P + (ClusterN -2) *Cluster1Sector_SU;
+    unsigned long dtCluster_P = Data_P + (ClusterN -2) *Cluster1Sector_SU;
 
     //シーク位置はクラスタ中p個目のセクタ
     unsigned short p = (FileSeekP /512) %Cluster1Sector_SU;
