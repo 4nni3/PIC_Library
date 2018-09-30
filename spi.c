@@ -1,5 +1,4 @@
 #include "spi.h"
-#include "lcd.h"
 
 void spi_init(){
     SPI_SSPSTAT = 0b00000000;//middle, idle 
@@ -8,7 +7,6 @@ void spi_init(){
 }
 
 unsigned char spi_transfer(char dt){
-    char dummy = SPI_SSPBUF;
     SPI_SSPCON1bits.WCOL = 0;
     SPI_SSPBUF = dt;
     while(SPI_SSPSTATbits.BF==0);

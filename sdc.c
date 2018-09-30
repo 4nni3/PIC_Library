@@ -1,9 +1,6 @@
-#include <stdio.h>
 #include <string.h>
 #include "sdc.h"
 #include "spi.h"
-
-#include "lcd.h"
 
 #define ERROR -1
 #define OK 0
@@ -63,8 +60,7 @@ struct DIR_ENTRY{
 };
 
 bit notSDHC;
-
-char buff[512];
+unsigned char buff[512];
 
 char cmd(unsigned char cmd, unsigned long arg){
 
@@ -82,24 +78,19 @@ char cmd(unsigned char cmd, unsigned long arg){
     spi_transfer(crc);
 
     char r;
-    //short x=0;
+    short x=0;
     do{
     	r = spi_transfer(0xFF);
-        //x++;
-    }while(r&0b10000000 /*&& x<30000*/);
-
+        x++;
+    }while(r&0b10000000 && x<30000);
+    if(x>=30000) return 0xFF;
     return r;
 }
 void read(unsigned long sector){
     if(notSDHC) sector<<=9;
-
-    char r = cmd(CMD17, sector);
-    if(r!=0x00){
-        char c[10];
-        sprintf(c, "C17Er%02X\0", r);
-        lcd_debug(c);
-        return;
-    }
+    
+    if(cmd(CMD17, sector)) return;
+    
     while(spi_transfer(0xFF)!=0xFE) __delay_us(100);
     for(short i=0; i<512; i++){
         buff[i] = spi_transfer(0xFF);
@@ -110,7 +101,7 @@ void read(unsigned long sector){
 void write(unsigned long sector){
     if(notSDHC) sector<<=9;
 
-    cmd(CMD24, sector);
+    if(cmd(CMD24, sector)) return;
     spi_transfer(0xFE);
     for(short i=0; i<512; i++){
         spi_transfer(buff[i]);
@@ -165,45 +156,25 @@ char sdc_init(){
     SDC_CS = 1;
     for(char i=0; i<10; i++) spi_transfer(0xFF);
     SDC_CS = 0;
-
-    lcd_debug((char *)"CMD0");
-    r = cmd(CMD0, 0);
-    if(r!=0x01){
-        char b[6];
-        sprintf(b, "Er%02X\0", r);
-        lcd_debug(b);
-        return ERROR;
+    
+    if(cmd(CMD0, 0)!=0x01) return ERROR;
+    
+    unsigned long a = 0;
+    if(cmd(CMD8, 0x1AA)!=0x01) return ERROR;
+    spi_transfer(0xFF);
+    spi_transfer(0xFF);
+    spi_transfer(0xFF);
+    if(spi_transfer(0xFF)==0xAA){//version2
+        a = 0x40000000;
     }
-    lcd_debug((char *)"OK");
-
-    lcd_debug((char *)"CMD8");
-    if(cmd(CMD8, 0x1AA)==0x01){//version1
-        lcd_debug((char *)"ver1");
-    }else{
-        lcd_debug((char *)"ver2");
-    }
-    spi_transfer(0xFF);
-    spi_transfer(0xFF);
-    spi_transfer(0xFF);
-    spi_transfer(0xFF);
-
-    lcd_debug((char *)"CMD55");
     do{
         __delay_ms(1);
         cmd(CMD55, 0);
-        r = cmd(ACMD41, 0x40000000);
+        r = cmd(ACMD41, a);
     }while(r==0x01);
-    if(r!=0x00){
-        char c[6];
-        sprintf(c, "Er%02X\0", r);
-        lcd_debug(c);
-        return ERROR;
-    }
-    lcd_debug((char *)"OK");
-
-    lcd_debug((char *)"CMD58");
-    if(cmd(CMD58, 0)!=0x00){//error
-        lcd_debug((char *)"Er");
+    if(r) return ERROR;
+    
+    if(cmd(CMD58, 0)){//error
         return ERROR;
     }
     if(spi_transfer(0xFF)&0b01000000){//SDHC
@@ -215,14 +186,9 @@ char sdc_init(){
     spi_transfer(0xFF);
     spi_transfer(0xFF);
 
-    lcd_debug((char *)"CMD16");
-    if(cmd(CMD16, 512)!=0x00){//error
-        char d[6];
-        sprintf(d, "Er%02X\0", r);
-        lcd_debug(d);
-        return ERROR;
-    }
-    lcd_debug("OK");
+    
+    if(cmd(CMD16, 512)) return ERROR;
+    
     fat_para_read();
     
     return OK;
@@ -297,7 +263,8 @@ void entry_make(unsigned short no, char *name){
         FileSeekP = 0;
         FirstFatno = no;
     }else{
-        inf->FileSize == FileSeekP;
+        //update
+        inf->FileSize = FileSeekP;
     }
 
     write(p);
@@ -337,25 +304,20 @@ void next_fat_read(){
         write(secter_p);
         write(secter_p +Fat1Sector_SU);
     }
-
-    char c[6];
-    sprintf(c, "N%04X\0", ClusterN);
-    lcd_debug(c);
 }
-
+unsigned long dtCluster_P;
 void sdc_write(char *str, char b){
     
     ClusterN = FirstFatno;
-    unsigned short p = FileSeekP /512 /Cluster1Sector_SU;
-    //データの最後はp個目のクラスタ
+    unsigned short q = FileSeekP /512 /Cluster1Sector_SU;//データの最後はq個目のクラスタ
     
-    for(unsigned short i=0; i<p; i++) next_fat_read();
+    for(unsigned short i=0; i<q; i++) next_fat_read();
 
     //クラスタの最初のセクタの位置
-    unsigned long dtCluster_P = Data_P + (ClusterN -2) *Cluster1Sector_SU;
+    dtCluster_P = Data_P + (ClusterN -2) *Cluster1Sector_SU;
 
     //シーク位置はクラスタ中p個目のセクタ
-    unsigned short p_in = (FileSeekP /512) %Cluster1Sector_SU;
+    unsigned short p = (FileSeekP /512) %Cluster1Sector_SU;
 
     //シーク位置はセクタ中x個目
     unsigned short x = FileSeekP %512;

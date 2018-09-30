@@ -10,6 +10,5 @@
 #define SPI_SSPCON1 SSP2CON1
 #define SPI_SSPCON1bits SSP2CON1bits
 #define SPI_SSPADD SSP2ADD
-
 void spi_init();
 unsigned char spi_transfer(char dt);
