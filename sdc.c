@@ -271,6 +271,8 @@ void entry_make(unsigned short no, char *name){
 
 }
 void sdc_open(char *filename){
+    SDC_CS = 0;
+    spi_transfer(0xFF);
     if(search_file(filename)){
         entry_make(search_fat(), filename);
     }

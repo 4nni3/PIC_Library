@@ -1,4 +1,7 @@
 #include <xc.h>
+#ifndef _XTAL_FREQ
+  #define _XTAL_FREQ 32000000
+#endif
 
 #define I2C_SSPSTAT SSP1STAT //
 #define I2C_SSPCON1 SSP1CON1 //

@@ -1,7 +1,3 @@
-#ifndef _XTAL_FREQ
-  #define _XTAL_FREQ 32000000//
-#endif
-
 #define LCD_ADD 0x7c
 
 #define CLEAR 0x01

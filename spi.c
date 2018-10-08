@@ -7,8 +7,10 @@ void spi_init(){
 }
 
 unsigned char spi_transfer(char dt){
+    //GIE=0;
     SPI_SSPCON1bits.WCOL = 0;
     SPI_SSPBUF = dt;
     while(SPI_SSPSTATbits.BF==0);
     return (SPI_SSPBUF);
+    //GIE=1;
 }

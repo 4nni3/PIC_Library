@@ -5,13 +5,13 @@
 void lcd_init(){
     i2c_init();
     
-    __delay_ms(100);
+    //__delay_ms(100);
     
     lcd_cmd(0x38);
     lcd_cmd(0x39);
     lcd_cmd(0x14);
-    lcd_cmd(0x73);
-    lcd_cmd(0x56);
+    lcd_cmd(0x73);//contrast
+    lcd_cmd(0x56);//contrast
     lcd_cmd(0x6C);
     lcd_cmd(0x38);
     lcd_cmd(CLEAR);
@@ -50,6 +50,13 @@ void lcd_debug(char *b){
         lcd_dat(b[i]);
         c++;
     }
-    lcd_dat((char *)'|');
+    if(c==16) lcd_cmd(LINE2);
+    if(c==32){
+        lcd_cmd(HOME);
+        c=0;
+    }
+    lcd_dat(',');
     c++;
+        
+    
 }

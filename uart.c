@@ -1,7 +1,6 @@
-#include <xc.h>
 #include "uart.h"
 
-char buff[BUFF_SIZE];
+char uart_buff[BUFF_SIZE];
 char wptr=0;
 char rptr=0;
 
@@ -19,8 +18,8 @@ void uart_init(){
 }
 
 char uart_read(){
-    if(rptr==wptr) return NULL;
-    char r = buff[rptr];
+    if(rptr==wptr) return NUL;
+    char r = uart_buff[rptr];
     rptr = (rptr+1) %BUFF_SIZE;
     return r;
 }
@@ -28,7 +27,7 @@ char uart_read(){
 void uart_write(char *data){
     for(unsigned char i=0; data[i]!=NUL; i++){
         while(TXIF==0);
-        TX1REG = data[i];
+        TXREG = data[i];
     }
 }
 char uart_avaiable(){
@@ -38,15 +37,15 @@ char uart_avaiable(){
 //Add interrupt
 void uart_isr(){
     if(RCIF){
+        if(RCSTAbits.OERR){
+            RCSTAbits.SPEN = 0;
+            NOP();
+            RCSTAbits.SPEN = 1;
+        }
         char wptr_ = (wptr+1) %BUFF_SIZE;
         if(wptr_!=rptr){
-            buff[wptr] = RCREG;
+            uart_buff[wptr] = RCREG;
             wptr = wptr_;
-        }
-        if(RCSTAbits.OERR){//if get error
-            RCSTAbits.CREN = 0;
-            while(RC1STAbits.OERR);
-            RCSTAbits.CREN = 1;
         }
         RCIF = 0;
     }
