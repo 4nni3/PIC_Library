@@ -104,6 +104,21 @@ void oled_clear(){
     for(unsigned short i=0; i<128*8; i++) i2c_write(0x00);
     i2c_stop();
 }
+
+void oled_addStr(char *str){
+    for(char idx=0; str[idx]!=NUL; idx++){
+        i2c_start(OLED_ADD);
+        cont(0,1);
+        for(char b=0; b<7; b++){
+            unsigned char byte = eeprom_read(7*(str[idx]-',')+b);
+            i2c_write(byte);
+        }
+        i2c_write(0x00);
+        
+        i2c_stop();
+    }
+}
+
 void oled_str(char *str, char lineNum){//16文字まで
     i2c_start(OLED_ADD);
     
@@ -126,18 +141,11 @@ void oled_str(char *str, char lineNum){//16文字まで
     
     i2c_stop();
     
-    for(char idx=0; str[idx]!=NUL; idx++){
-        i2c_start(OLED_ADD);
-        cont(0,1);
-        for(char b=0; b<7; b++){
-            unsigned char byte = eeprom_read(7*(str[idx]-',')+b);
-            i2c_write(byte);
-        }
-        i2c_write(0x00);
-        
-        i2c_stop();
-    }
+    oled_addStr(str);
 }
+
+
+
 unsigned short beBig(unsigned char c){
     unsigned short r=0;
     for(char i=0; i<8; i++){
@@ -175,10 +183,6 @@ void oled_bigStr(char *str, char lineNum){//８文字まで
         cont(0, 1);
         for(char b=0; b<7; b++){
             unsigned char byte = eeprom_read(7*(str[idx]-',')+b);
-            /*i2c_write(byte<<4);
-            i2c_write(byte>>4);
-            i2c_write(byte<<4);
-            i2c_write(byte>>4);*/
             
             unsigned short s = beBig(byte);
             i2c_write(s&0xFF);

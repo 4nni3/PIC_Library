@@ -308,7 +308,7 @@ void next_fat_read(){
     }
 }
 
-void sdc_write(char *str, char b){
+void sdc_write(char *str){
     
     ClusterN = FirstFatno;
     unsigned short q = FileSeekP /512 /Cluster1Sector_SU;//データの最後はq個目のクラスタ
@@ -326,7 +326,7 @@ void sdc_write(char *str, char b){
 
     read(dtCluster_P +p);
     
-    for(char i=0; i<b; i++){
+    for(char i=0; str[i]!='\0'; i++){
         buff[x] = str[i];
         x++;
         FileSeekP++;
