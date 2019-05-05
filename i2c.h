@@ -1,6 +1,6 @@
 #include <xc.h>
 #ifndef _XTAL_FREQ
-  #define _XTAL_FREQ 32000000
+  #define _XTAL_FREQ 16000000
 #endif
 
 #define I2C_SSPSTAT SSP1STAT //
@@ -13,6 +13,7 @@
 
 void i2c_init();
 void i2c_wait();
-void i2c_start(char add);
+void i2c_start(char add, char read);
 void i2c_stop();
-void i2c_write(char data);
+void i2c_write(unsigned char data);
+unsigned char i2c_read();
